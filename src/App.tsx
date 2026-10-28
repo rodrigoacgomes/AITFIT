@@ -55,6 +55,7 @@ export default function App() {
   const [lockedItems, setLockedItems] = useState<any>({});
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   const [newItem, setNewItem] = useState<any>({
     name: '',
@@ -166,13 +167,36 @@ export default function App() {
     return pool[Math.floor(Math.random() * pool.length)];
   };
 
-  const handleAddItem = (e: React.FormEvent) => {
+  const openAddModal = () => {
+    setEditingItemId(null);
+    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno' });
+    setIsAddModalOpen(true);
+  };
+
+  const openEditModal = (item: any) => {
+    setEditingItemId(item.id);
+    setNewItem({
+      name: item.name || '',
+      category: item.category || 'tronco-base',
+      fit: item.fit || 'Normal',
+      color1: item.color1 || '',
+      color2: item.color2 || '',
+      weather: item.weather || 'Ameno'
+    });
+    setIsAddModalOpen(true);
+  };
+
+  const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItem.name) return;
-    setCloset((prev: any[]) => [...prev, { 
-      ...newItem, 
-      id: Date.now().toString()
-    }]);
+
+    if (editingItemId) {
+      setCloset((prev: any[]) => prev.map((i: any) => i.id === editingItemId ? { ...newItem, id: editingItemId } : i));
+    } else {
+      setCloset((prev: any[]) => [...prev, { ...newItem, id: Date.now().toString() }]);
+    }
+
+    setEditingItemId(null);
     setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno' });
     setIsAddModalOpen(false);
   };
@@ -195,8 +219,8 @@ export default function App() {
 
   const loadSampleCloset = () => {
     const samples = [
-      { id: '1', name: 'Gorro Knit Preto', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio' },
-      { id: '2', name: 'T-Shirt Branca', category: 'tronco-base', fit: 'Oversized', color1: 'Branco', color2: '', weather: 'Quente' },
+      { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio' },
+      { id: '2', name: 'T-Shirt Básica', category: 'tronco-base', fit: 'Oversized', color1: 'Branco', color2: '', weather: 'Quente' },
       { id: '3', name: 'Camisola Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio' },
       { id: '4', name: 'Casaco Bomber', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: 'Laranja', weather: 'Frio' },
       { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno' },
@@ -218,22 +242,26 @@ export default function App() {
     'acessorios': 'Acessórios'
   };
 
-  // Caixas Retangulares do Lado Direito
+  // Caixas Retangulares do Lado Direito no Esquema
   const ItemBox = ({ slotKey, item, placeholder }: { slotKey: string; item: any; placeholder: string }) => (
-    <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${item ? 'bg-zinc-900 border-sky-500/40' : 'bg-zinc-950/40 border-zinc-800/80 border-dashed'}`}>
-      <div className="overflow-hidden pr-2">
-        <div className="text-xs font-semibold text-zinc-100 truncate">
+    <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${item ? 'bg-zinc-900 border-sky-500/50' : 'bg-zinc-950/40 border-zinc-800/80 border-dashed'}`}>
+      <div className="overflow-hidden pr-2 flex-1">
+        <div className="text-xs font-bold text-zinc-100 truncate">
           {item ? item.name : <span className="text-zinc-600 font-normal italic">{placeholder}</span>}
         </div>
         {item && (
-          <div className="text-[9px] text-zinc-400 mt-0.5 flex items-center gap-1.5">
-            <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-300">{item.fit || 'Normal'}</span>
-            <span>{item.color1}{item.color2 ? ` / ${item.color2}` : ''}</span>
+          <div className="text-[10px] text-zinc-300 mt-1 flex items-center gap-1.5 flex-wrap">
+            <span className="bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 rounded font-semibold text-[9px] uppercase">
+              {item.fit || 'Normal'}
+            </span>
+            <span className="bg-zinc-800 text-zinc-200 px-1.5 py-0.5 rounded text-[9px]">
+              {item.color1}{item.color2 ? ` / ${item.color2}` : ''}
+            </span>
           </div>
         )}
       </div>
       {item && (
-        <button onClick={() => setLockedItems((p: any) => ({ ...p, [slotKey]: p[slotKey] ? null : item }))} className="text-xs p-1">
+        <button onClick={() => setLockedItems((p: any) => ({ ...p, [slotKey]: p[slotKey] ? null : item }))} className="text-xs p-1 ml-1">
           {lockedItems[slotKey] ? <span className="text-sky-400 font-bold">🔒</span> : <span className="text-zinc-600">🔓</span>}
         </button>
       )}
@@ -334,7 +362,7 @@ export default function App() {
               {isGenerating ? 'A alinhar estilo e clima...' : 'Gerar Outfit Personalizado'}
             </button>
 
-            {/* ESQUEMA EM 2 COLUNAS BASEADO NO TEU ESBOÇO */}
+            {/* ESQUEMA EM 2 COLUNAS */}
             {generatedOutfit && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
@@ -348,7 +376,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-zinc-900/70 rounded-2xl border border-zinc-800 p-3.5 space-y-4">
-                  {/* SEÇÃO 1: CABEÇA */}
+                  {/* CABEÇA */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2 }}>
@@ -361,9 +389,9 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* SEÇÃO 2: TRONCO (3 CAIXAS EMPILHADAS) */}
+                  {/* TRONCO */}
                   <div className="grid grid-cols-12 gap-3 items-center">
-                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-5 px-1 rounded-xl">
+                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-6 px-1 rounded-xl">
                       <svg viewBox="0 0 50 50" className="w-10 h-10 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
                         <path d="M12,12 L20,16 L30,16 L38,12 L44,22 L38,24 L38,44 L12,44 L12,24 L6,22 Z" />
                       </svg>
@@ -376,7 +404,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* SEÇÃO 3: PERNAS */}
+                  {/* PERNAS */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -389,7 +417,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* SEÇÃO 4: PÉS */}
+                  {/* PÉS */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -402,7 +430,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* SEÇÃO 5: ACESSÓRIOS */}
+                  {/* ACESSÓRIOS */}
                   <div className="grid grid-cols-12 gap-3 items-center pt-2 border-t border-zinc-800/60">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -439,7 +467,7 @@ export default function App() {
                     Amostras
                   </button>
                 )}
-                <button onClick={() => setIsAddModalOpen(true)} className="py-2 px-3 bg-sky-500 text-black text-xs font-bold rounded-xl flex items-center gap-1">
+                <button onClick={openAddModal} className="py-2 px-3 bg-sky-500 text-black text-xs font-bold rounded-xl flex items-center gap-1">
                   + Adicionar
                 </button>
               </div>
@@ -464,13 +492,22 @@ export default function App() {
                         </span>
                         <h4 className="text-xs font-bold text-zinc-100 truncate mt-0.5">{item.name}</h4>
                       </div>
-                      <button 
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="text-zinc-500 hover:text-rose-400 p-1 text-xs -mr-1 -mt-1 rounded-lg transition-colors"
-                        title="Remover peça"
-                      >
-                        🗑️
-                      </button>
+                      <div className="flex items-center gap-0.5 -mr-1 -mt-1">
+                        <button 
+                          onClick={() => openEditModal(item)}
+                          className="text-zinc-400 hover:text-sky-400 p-1 text-xs rounded-lg transition-colors"
+                          title="Editar peça"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="text-zinc-500 hover:text-rose-400 p-1 text-xs rounded-lg transition-colors"
+                          title="Remover peça"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                     <div className="text-[10px] text-zinc-400 pt-1.5 border-t border-zinc-800/80 flex flex-wrap gap-x-2 gap-y-0.5">
                       <span>Fit: <strong className="text-zinc-200">{item.fit || 'Normal'}</strong></span>
@@ -505,7 +542,7 @@ export default function App() {
                       {['head', 'torsoBase', 'torsoMid', 'torsoOuter', 'legs', 'feet', 'accessory'].map((s: string) => fav[s] && (
                         <div key={s} className="text-xs text-zinc-300 flex justify-between bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800/60">
                           <span className="text-sky-400 text-[10px] uppercase font-semibold">{s.replace('torso', 'tronco ')}:</span>
-                          <span className="font-medium text-zinc-200">{fav[s].name}</span>
+                          <span className="font-medium text-zinc-200">{fav[s].name} ({fav[s].fit || 'Normal'})</span>
                         </div>
                       ))}
                     </div>
@@ -581,16 +618,18 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL DE ADICIONAR PEÇA */}
+      {/* MODAL DE CRIAÇÃO / EDIÇÃO DE PEÇA */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-5 space-y-4 text-xs max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
-              <h3 className="font-bold text-white text-sm">Adicionar Nova Peça</h3>
+              <h3 className="font-bold text-white text-sm">
+                {editingItemId ? 'Editar Peça' : 'Adicionar Nova Peça'}
+              </h3>
               <button onClick={() => setIsAddModalOpen(false)} className="text-zinc-500 text-base">✕</button>
             </div>
 
-            <form onSubmit={handleAddItem} className="space-y-4">
+            <form onSubmit={handleSaveItem} className="space-y-4">
               <div>
                 <label className="block text-zinc-300 font-semibold mb-1">Nome</label>
                 <input
@@ -688,7 +727,7 @@ export default function App() {
               </div>
 
               <button type="submit" className="w-full py-3 bg-sky-500 text-black font-bold text-xs rounded-xl mt-3 shadow-lg shadow-sky-500/20">
-                Guardar no Closet
+                {editingItemId ? 'Guardar Alterações' : 'Guardar no Closet'}
               </button>
             </form>
           </div>
