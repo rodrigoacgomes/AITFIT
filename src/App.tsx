@@ -16,14 +16,6 @@ const LogoAITFIT = () => (
   </svg>
 );
 
-// Silhueta de Fundo do Corpo Humano
-const BodySilhouette = () => (
-  <svg viewBox="0 0 100 220" className="w-full h-full text-zinc-800 fill-current opacity-30">
-    <circle cx="50" cy="18" r="11" />
-    <path d="M30,36 C30,36 38,34 50,34 C62,34 70,36 70,36 C75,37 78,41 78,46 L74,90 C73,93 70,95 67,95 L64,95 L64,145 C64,148 61,150 58,150 L54,150 L54,200 C54,203 51,205 48,205 L45,205 C42,205 40,203 40,200 L40,150 L36,150 C33,150 30,148 30,145 L30,95 L27,95 C24,95 21,93 20,90 L16,46 C16,41 19,37 24,36 Z" />
-  </svg>
-);
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('outfit');
   const [selectedDay, setSelectedDay] = useState<string>('today');
@@ -203,7 +195,7 @@ export default function App() {
 
   const loadSampleCloset = () => {
     const samples = [
-      { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio' },
+      { id: '1', name: 'Gorro Knit Preto', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio' },
       { id: '2', name: 'T-Shirt Branca', category: 'tronco-base', fit: 'Oversized', color1: 'Branco', color2: '', weather: 'Quente' },
       { id: '3', name: 'Camisola Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio' },
       { id: '4', name: 'Casaco Bomber', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: 'Laranja', weather: 'Frio' },
@@ -226,26 +218,24 @@ export default function App() {
     'acessorios': 'Acessórios'
   };
 
-  // Componente de Slot do Esqueleto
-  const SlotBox = ({ label, slotKey, item }: { label: string; slotKey: string; item: any }) => (
-    <div className={`p-2 rounded-xl border backdrop-blur-md transition-all ${item ? 'bg-zinc-900/90 border-sky-500/50' : 'bg-zinc-950/40 border-zinc-800/80 border-dashed'}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-[9px] uppercase font-bold text-sky-400 tracking-wider">{label}</span>
+  // Caixas Retangulares do Lado Direito
+  const ItemBox = ({ slotKey, item, placeholder }: { slotKey: string; item: any; placeholder: string }) => (
+    <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${item ? 'bg-zinc-900 border-sky-500/40' : 'bg-zinc-950/40 border-zinc-800/80 border-dashed'}`}>
+      <div className="overflow-hidden pr-2">
+        <div className="text-xs font-semibold text-zinc-100 truncate">
+          {item ? item.name : <span className="text-zinc-600 font-normal italic">{placeholder}</span>}
+        </div>
         {item && (
-          <button onClick={() => setLockedItems((p: any) => ({ ...p, [slotKey]: p[slotKey] ? null : item }))} className="text-xs">
-            {lockedItems[slotKey] ? <span className="text-sky-400">🔒</span> : <span className="text-zinc-600">🔓</span>}
-          </button>
+          <div className="text-[9px] text-zinc-400 mt-0.5 flex items-center gap-1.5">
+            <span className="bg-zinc-800 px-1.5 py-0.5 rounded text-zinc-300">{item.fit || 'Normal'}</span>
+            <span>{item.color1}{item.color2 ? ` / ${item.color2}` : ''}</span>
+          </div>
         )}
       </div>
-      <div className="text-xs font-semibold text-zinc-100 truncate mt-0.5">
-        {item ? item.name : <span className="text-zinc-600 font-normal italic">Sem peça</span>}
-      </div>
       {item && (
-        <div className="text-[9px] text-zinc-400 mt-0.5 flex gap-2">
-          <span>{item.fit || 'Normal'}</span>
-          <span>•</span>
-          <span>{item.color1}{item.color2 ? `/${item.color2}` : ''}</span>
-        </div>
+        <button onClick={() => setLockedItems((p: any) => ({ ...p, [slotKey]: p[slotKey] ? null : item }))} className="text-xs p-1">
+          {lockedItems[slotKey] ? <span className="text-sky-400 font-bold">🔒</span> : <span className="text-zinc-600">🔓</span>}
+        </button>
       )}
     </div>
   );
@@ -344,7 +334,7 @@ export default function App() {
               {isGenerating ? 'A alinhar estilo e clima...' : 'Gerar Outfit Personalizado'}
             </button>
 
-            {/* ESQUEMA ESQUELÉTICO DE OUTFIT */}
+            {/* ESQUEMA EM 2 COLUNAS BASEADO NO TEU ESBOÇO */}
             {generatedOutfit && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
@@ -357,40 +347,73 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="relative bg-zinc-900/80 rounded-2xl border border-zinc-800 p-4 overflow-hidden min-h-[460px] flex flex-col justify-between">
-                  {/* Silhueta de Corpo ao Fundo */}
-                  <div className="absolute inset-0 flex items-center justify-center p-2 pointer-events-none">
-                    <BodySilhouette />
-                  </div>
-
-                  {/* Conteúdo Sobreposto nos Slots do Corpo */}
-                  <div className="relative z-10 space-y-3">
-                    {/* ZONA DA CABEÇA (1 SLOT) */}
-                    <div className="max-w-[180px] mx-auto">
-                      <SlotBox label="Cabeça" slotKey="head" item={generatedOutfit.head} />
+                <div className="bg-zinc-900/70 rounded-2xl border border-zinc-800 p-3.5 space-y-4">
+                  {/* SEÇÃO 1: CABEÇA */}
+                  <div className="grid grid-cols-12 gap-3 items-center">
+                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
+                      <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2 }}>
+                        <circle cx="20" cy="20" r="14" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-zinc-300 mt-1">Cabeça</span>
                     </div>
-
-                    {/* ZONA DO TRONCO (3 SLOTS) */}
-                    <div className="grid grid-cols-1 gap-1.5">
-                      <SlotBox label="Tronco Base" slotKey="torsoBase" item={generatedOutfit.torsoBase} />
-                      <SlotBox label="Camada Meio" slotKey="torsoMid" item={generatedOutfit.torsoMid} />
-                      <SlotBox label="Casaco / Exterior" slotKey="torsoOuter" item={generatedOutfit.torsoOuter} />
-                    </div>
-
-                    {/* ZONA DAS PERNAS (1 SLOT) */}
-                    <div className="max-w-[240px] mx-auto">
-                      <SlotBox label="Pernas" slotKey="legs" item={generatedOutfit.legs} />
-                    </div>
-
-                    {/* ZONA DOS PÉS (1 SLOT) */}
-                    <div className="max-w-[200px] mx-auto">
-                      <SlotBox label="Pés" slotKey="feet" item={generatedOutfit.feet} />
+                    <div className="col-span-8">
+                      <ItemBox slotKey="head" item={generatedOutfit.head} placeholder="Sem peça" />
                     </div>
                   </div>
 
-                  {/* ZONA DE ACESSÓRIOS (POR BAIXO DO ESQUELETO) */}
-                  <div className="relative z-10 pt-3 mt-3 border-t border-zinc-800/80">
-                    <SlotBox label="Acessório" slotKey="accessory" item={generatedOutfit.accessory} />
+                  {/* SEÇÃO 2: TRONCO (3 CAIXAS EMPILHADAS) */}
+                  <div className="grid grid-cols-12 gap-3 items-center">
+                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-5 px-1 rounded-xl">
+                      <svg viewBox="0 0 50 50" className="w-10 h-10 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
+                        <path d="M12,12 L20,16 L30,16 L38,12 L44,22 L38,24 L38,44 L12,44 L12,24 L6,22 Z" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-zinc-300 mt-1">Tronco</span>
+                    </div>
+                    <div className="col-span-8 space-y-1.5">
+                      <ItemBox slotKey="torsoBase" item={generatedOutfit.torsoBase} placeholder="Tronco Base" />
+                      <ItemBox slotKey="torsoMid" item={generatedOutfit.torsoMid} placeholder="Tronco Camada" />
+                      <ItemBox slotKey="torsoOuter" item={generatedOutfit.torsoOuter} placeholder="Casaco / Exterior" />
+                    </div>
+                  </div>
+
+                  {/* SEÇÃO 3: PERNAS */}
+                  <div className="grid grid-cols-12 gap-3 items-center">
+                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
+                      <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
+                        <path d="M10,8 L30,8 L28,36 L22,36 L20,18 L18,18 L16,36 L10,36 Z" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-zinc-300 mt-1">Pernas</span>
+                    </div>
+                    <div className="col-span-8">
+                      <ItemBox slotKey="legs" item={generatedOutfit.legs} placeholder="Sem calças" />
+                    </div>
+                  </div>
+
+                  {/* SEÇÃO 4: PÉS */}
+                  <div className="grid grid-cols-12 gap-3 items-center">
+                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
+                      <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
+                        <path d="M6,24 L16,20 L26,20 L34,26 L34,30 L6,30 Z" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-zinc-300 mt-1">Pés</span>
+                    </div>
+                    <div className="col-span-8">
+                      <ItemBox slotKey="feet" item={generatedOutfit.feet} placeholder="Sem calçado" />
+                    </div>
+                  </div>
+
+                  {/* SEÇÃO 5: ACESSÓRIOS */}
+                  <div className="grid grid-cols-12 gap-3 items-center pt-2 border-t border-zinc-800/60">
+                    <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
+                      <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
+                        <rect x="8" y="14" width="24" height="18" rx="3" />
+                        <path d="M14,14 L14,10 C14,8 16,6 20,6 C24,6 26,8 26,10 L26,14" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-zinc-300 mt-1">Acessórios</span>
+                    </div>
+                    <div className="col-span-8">
+                      <ItemBox slotKey="accessory" item={generatedOutfit.accessory} placeholder="Sem acessório" />
+                    </div>
                   </div>
                 </div>
               </div>
