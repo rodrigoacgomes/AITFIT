@@ -22,6 +22,7 @@ export default function App() {
   const [timeSlots, setTimeSlots] = useState<{ [key: string]: boolean }>({ morning: true, afternoon: true, night: false });
   const [formality, setFormality] = useState<number>(3);
   const [weatherData, setWeatherData] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   useEffect(() => {
     if (!document.getElementById('tailwind-cdn')) {
@@ -133,38 +134,101 @@ export default function App() {
     setTimeSlots((prev: any) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleGenerate = () => {
-    setIsGenerating(true);
-    const st = getStats();
-    setTimeout(() => {
-      setGeneratedOutfit({
-        id: Date.now().toString(),
-        head: lockedItems.head || pickItem('cabeca', st),
-        torsoBase: lockedItems.torsoBase || pickItem('tronco-base', st),
-        torsoMid: lockedItems.torsoMid || (st.minTemp < 18 ? pickItem('tronco-meio', st) : null),
-        torsoOuter: lockedItems.torsoOuter || (st.minTemp < 15 || st.rainProb > 30 ? pickItem('tronco-fora', st) : null),
-        legs: lockedItems.legs || pickItem('pernas', st),
-        feet: lockedItems.feet || pickItem('pes', st),
-        accessory: lockedItems.accessory || pickItem('acessorios', st),
-        date: new Date().toLocaleDateString('pt-PT')
-      });
-      setIsGenerating(false);
-    }, 600);
+  // --- MOTOR DE REGRAS DE MODA E FORMALIDADE ---
+  const getItemFormality = (item: any): number => {
+    if (!item) return 2;
+    const text = `${item.name} ${item.category} ${item.fit}`.toLowerCase();
+
+    if (text.includes('fato de treino') || text.includes('jogger') || text.includes('corrida') || 
+        text.includes('treino') || text.includes('desportiv') || text.includes('calções de treino')) {
+      return 1;
+    }
+    if (text.includes('blazer') || text.includes('fato') || text.includes('alfaiataria') || 
+        text.includes('cerimónia') || text.includes('smoking') || text.includes('sobretudo')) {
+      return 4;
+    }
+    if (text.includes('chino') || text.includes('polo') || text.includes('linho') || 
+        text.includes('oxford') || text.includes('tricot') || text.includes('loafer') || text.includes('mocassim')) {
+      return 3;
+    }
+    return 2; // Casual Padrão
   };
 
-  const pickItem = (cat: string, st: any) => {
+  const isItemCompatible = (item: any, targetFormality: number, currentStyle: string) => {
+    const itemFormality = getItemFormality(item);
+
+    // Regra da Distância Máxima de Formalidade (|Formality_item - Formality_target| <= 1)
+    if (Math.abs(itemFormality - targetFormality) > 1) {
+      return false;
+    }
+
+    const text = `${item.name} ${item.category}`.toLowerCase();
+
+    // Bloqueios Rígidos por Estilo
+    if (currentStyle === 'Smart / Elegante') {
+      if (itemFormality === 1 || text.includes('fato de treino') || text.includes('jogger')) return false;
+    }
+    if (currentStyle === 'Desportivo / Comfort') {
+      if (itemFormality >= 4 || text.includes('blazer') || text.includes('alfaiataria')) return false;
+    }
+    if (currentStyle === 'Minimalista') {
+      if (item.color2 && item.color2.length > 0) return false;
+    }
+
+    return true;
+  };
+
+  const pickSmartItem = (cat: string, targetFormality: number, currentStyle: string, basePiece: any = null) => {
     const candidates = closet.filter((i: any) => i.category === cat);
     if (!candidates.length) return null;
 
-    const preferredMatches = candidates.filter((i: any) => 
+    // Filtro 1: Regras do Guião de Moda & Formalidade
+    let validPool = candidates.filter((i: any) => isItemCompatible(i, targetFormality, currentStyle));
+
+    // Filtro 2: Garantir que a distância para a peça base no look é <= 1
+    if (basePiece && validPool.length > 0) {
+      const baseFormality = getItemFormality(basePiece);
+      validPool = validPool.filter((i: any) => Math.abs(getItemFormality(i) - baseFormality) <= 1);
+    }
+
+    // Se o filtro for muito rigoroso e não houver peças, usa candidatos da categoria sem quebrar a app
+    const pool = validPool.length > 0 ? validPool : candidates;
+
+    // Priorizar cores preferidas do perfil se disponível
+    const colorMatches = pool.filter((i: any) => 
       styleProfile.preferredColors.some((c: string) => 
         c.toLowerCase() === (i.color1 || '').toLowerCase() || 
         c.toLowerCase() === (i.color2 || '').toLowerCase()
       )
     );
 
-    const pool = preferredMatches.length > 0 ? preferredMatches : candidates;
-    return pool[Math.floor(Math.random() * pool.length)];
+    const finalPool = colorMatches.length > 0 ? colorMatches : pool;
+    return finalPool[Math.floor(Math.random() * finalPool.length)];
+  };
+
+  const handleGenerate = () => {
+    setIsGenerating(true);
+    const st = getStats();
+    const currentStyle = styleProfile.primaryStyle || 'Casual Urbano';
+
+    setTimeout(() => {
+      // 1. Definir a peça âncora principal (Tronco Base ou Pernas)
+      const torsoBase = lockedItems.torsoBase || pickSmartItem('tronco-base', formality, currentStyle);
+      const legs = lockedItems.legs || pickSmartItem('pernas', formality, currentStyle, torsoBase);
+
+      setGeneratedOutfit({
+        id: Date.now().toString(),
+        head: lockedItems.head || pickSmartItem('cabeca', formality, currentStyle, torsoBase),
+        torsoBase: torsoBase,
+        torsoMid: lockedItems.torsoMid || (st.minTemp < 18 ? pickSmartItem('tronco-meio', formality, currentStyle, torsoBase) : null),
+        torsoOuter: lockedItems.torsoOuter || (st.minTemp < 15 || st.rainProb > 30 ? pickSmartItem('tronco-fora', formality, currentStyle, torsoBase) : null),
+        legs: legs,
+        feet: lockedItems.feet || pickSmartItem('pes', formality, currentStyle, legs),
+        accessory: lockedItems.accessory || pickSmartItem('acessorios', formality, currentStyle, torsoBase),
+        date: new Date().toLocaleDateString('pt-PT')
+      });
+      setIsGenerating(false);
+    }, 600);
   };
 
   const openAddModal = () => {
@@ -241,6 +305,21 @@ export default function App() {
     'pes': 'Pés',
     'acessorios': 'Acessórios'
   };
+
+  // Filtragem do Closet pela Barra de Pesquisa
+  const filteredCloset = closet.filter((item: any) => {
+    const query = searchQuery.toLowerCase().trim();
+    if (!query) return true;
+    const catLabel = (categoryLabels[item.category] || item.category).toLowerCase();
+    return (
+      (item.name || '').toLowerCase().includes(query) ||
+      catLabel.includes(query) ||
+      (item.fit || '').toLowerCase().includes(query) ||
+      (item.color1 || '').toLowerCase().includes(query) ||
+      (item.color2 || '').toLowerCase().includes(query) ||
+      (item.weather || '').toLowerCase().includes(query)
+    );
+  });
 
   // Caixas Retangulares do Lado Direito no Esquema
   const ItemBox = ({ slotKey, item, placeholder }: { slotKey: string; item: any; placeholder: string }) => (
@@ -454,7 +533,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold text-white">O Meu Closet</h2>
-                <p className="text-xs text-zinc-400">{closet.length} peças guardadas</p>
+                <p className="text-xs text-zinc-400">{closet.length} peças no total</p>
               </div>
               <div className="flex gap-2">
                 {closet.length > 0 && (
@@ -473,6 +552,27 @@ export default function App() {
               </div>
             </div>
 
+            {/* BARRA DE PESQUISA NO CLOSET */}
+            {closet.length > 0 && (
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Pesquisar por nome, cor, categoria, fit ou clima..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-sky-500"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+
             {closet.length === 0 ? (
               <div className="text-center py-12 bg-zinc-900/40 rounded-2xl border border-zinc-800 space-y-3">
                 <span className="text-2xl">👕</span>
@@ -481,9 +581,13 @@ export default function App() {
                   Carregar peças de exemplo
                 </button>
               </div>
+            ) : filteredCloset.length === 0 ? (
+              <div className="text-center py-8 bg-zinc-900/20 rounded-2xl border border-zinc-800/60">
+                <p className="text-xs text-zinc-500">Nenhuma peça encontrada para "{searchQuery}".</p>
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-2.5">
-                {closet.map((item: any) => (
+                {filteredCloset.map((item: any) => (
                   <div key={item.id} className="bg-zinc-900 p-3 rounded-xl border border-zinc-800 flex flex-col justify-between space-y-2 relative">
                     <div className="flex items-start justify-between gap-1">
                       <div className="overflow-hidden">
