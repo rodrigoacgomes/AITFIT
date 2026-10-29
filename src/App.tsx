@@ -151,7 +151,7 @@ export default function App() {
     return NEUTRALS.some(n => c.includes(n));
   };
 
-  // --- FILTRAGEM RÍGIDA DE FORMALIDADE POR CATEGORIA ---
+  // --- FILTRAGEM COM FALLBACK EXTREMO (REGRA 1) ---
   const getCategoryPool = (category: string, targetFormality: number) => {
     const items = closet.filter((i: any) => i.category === category);
     if (!items.length) return [null];
@@ -167,12 +167,14 @@ export default function App() {
       if (targetFormality === 1 && f >= 3) return false;
       return Math.abs(f - targetFormality) === 1;
     });
+    if (tier2.length > 0) return tier2;
 
-    return tier2.length > 0 ? tier2 : [null];
+    // Tier 3 (REGRA 1 - Fallback Extremo): Se não houver nada compatível, devolve qualquer peça da categoria
+    return items;
   };
 
-  // --- MOTOR GLOBAL DE ESTILO (Avaliador de Harmonia, Proporções, Layering e Cor) ---
-  const evaluateGlobalHarmony = (candidate: any, targetFormality: number) => {
+  // --- MOTOR GLOBAL DE STYLING E RENOVAÇÃO DE UNLOCKED (REGRA 2) ---
+  const evaluateGlobalHarmony = (candidate: any, targetFormality: number, currentOutfit: any, locked: any) => {
     let score = 50;
 
     const activeItems = [
@@ -187,23 +189,31 @@ export default function App() {
 
     if (activeItems.length === 0) return 0;
 
+    // REGRA 2: Bónus de Renovação nas Peças NÃO Bloqueadas
+    if (currentOutfit) {
+      const slots = ['head', 'torsoBase', 'torsoMid', 'torsoOuter', 'legs', 'feet', 'accessory'];
+      slots.forEach((slot) => {
+        if (!locked[slot] && candidate[slot] && currentOutfit[slot]) {
+          if (candidate[slot].id !== currentOutfit[slot].id) {
+            score += 10; // Força ativamente a mudar as peças destravadas
+          }
+        }
+      });
+    }
+
     // 1. HARMONIA DE CORES (Regra 60-30-10 & Esquemas Cromáticos)
     const colors = activeItems.map((i: any) => (i.color1 || '').toLowerCase().trim()).filter(Boolean);
     const nonNeutrals = colors.filter((c: string) => !isNeutralColor(c));
     const uniqueNonNeutrals = Array.from(new Set(nonNeutrals));
 
     if (uniqueNonNeutrals.length === 0) {
-      // Look All-Neutral / Tom sobre Tom
-      score += 25;
+      score += 25; // All-Neutral
     } else if (uniqueNonNeutrals.length === 1) {
-      // Regra 60-30-10 ou Base Neutra + 1 Destaque de Cor (Pop de Cor Perfeito)
-      score += 35;
+      score += 35; // Pop de Cor Perfeito
     } else if (uniqueNonNeutrals.length === 2) {
-      // 2 cores vivas -> Aceitável apenas com moderação
       score += 10;
     } else {
-      // 3 ou mais cores não-neutras -> Choque cromático sem harmonia
-      score -= 45;
+      score -= 45; // Choque cromático
     }
 
     // Regra Sanduíche (Topo espelha os Pés)
@@ -216,40 +226,39 @@ export default function App() {
       }
     }
 
-    // 2. PROPORÇÕES E SILHUETA (Lei do Contraponto de Fit)
+    // 2. PROPORÇÕES E SILHUETA (Contraponto de Fit)
     const topFit = (topItem?.fit || 'Normal').toLowerCase();
     const legsFit = (candidate.legs?.fit || 'Normal').toLowerCase();
 
     if (topFit === 'oversized') {
       if (legsFit === 'slim' || legsFit === 'normal') {
-        score += 20; // Contraponto Perfeito: Cima largo + Baixo ajustado
+        score += 20;
       } else if (legsFit === 'oversized') {
-        score -= 10; // Perda de estrutura
+        score -= 10;
       }
     } else if (topFit === 'slim') {
       if (legsFit === 'oversized' || legsFit === 'normal') {
-        score += 20; // Contraponto Perfeito: Cima ajustado + Baixo fluido
+        score += 20;
       }
     } else {
-      score += 10; // Fit Normal equilibrado
+      score += 10;
     }
 
-    // 3. LAYERING & REGRA DA TERCEIRA PEÇA
-    const hasThirdPiece = Boolean(candidate.torsoMid || candidate.torsoOuter);
-    if (hasThirdPiece) {
-      score += 15; // Estrutura instantânea com terceira peça
+    // 3. LAYERING & TERCEIRA PEÇA
+    if (candidate.torsoMid || candidate.torsoOuter) {
+      score += 15;
     }
 
-    // Contraste High-Low (Alfaiataria / Formal + Casual / Sapatilhas)
+    // Contraste High-Low
     if (candidate.legs && candidate.feet) {
       const legsFormality = Number(candidate.legs.formality) || 2;
       const feetFormality = Number(candidate.feet.formality) || 2;
       if (legsFormality >= 3 && feetFormality === 2) {
-        score += 15; // High-Low Urbano Elegante
+        score += 15;
       }
     }
 
-    // 4. FORMALIDADE E ÂNCORA DO OUTFIT
+    // 4. FORMALIDADE DE SUPORTE
     activeItems.forEach((i: any) => {
       const f = Number(i.formality) || 2;
       if (f === targetFormality) score += 5;
@@ -287,26 +296,26 @@ export default function App() {
         ? [lockedItems.accessory] 
         : getCategoryPool('acessorios', formality);
 
-      // Gerar amostras de combinações completas e avaliar com as regras de styling
+      // Simular combinações de outfits e avaliar com bónus de mudança para peças não bloqueadas
       const candidateOutfits: any[] = [];
-      const numSamples = 80;
+      const numSamples = 100;
 
       for (let i = 0; i < numSamples; i++) {
         const candidate = {
-          head: headPool[Math.floor(Math.random() * headPool.length)],
-          torsoBase: torsoBasePool[Math.floor(Math.random() * torsoBasePool.length)],
-          torsoMid: torsoMidPool[Math.floor(Math.random() * torsoMidPool.length)],
-          torsoOuter: torsoOuterPool[Math.floor(Math.random() * torsoOuterPool.length)],
-          legs: legsPool[Math.floor(Math.random() * legsPool.length)],
-          feet: feetPool[Math.floor(Math.random() * feetPool.length)],
-          accessory: accessoryPool[Math.floor(Math.random() * accessoryPool.length)]
+          head: lockedItems.head || headPool[Math.floor(Math.random() * headPool.length)],
+          torsoBase: lockedItems.torsoBase || torsoBasePool[Math.floor(Math.random() * torsoBasePool.length)],
+          torsoMid: lockedItems.torsoMid || torsoMidPool[Math.floor(Math.random() * torsoMidPool.length)],
+          torsoOuter: lockedItems.torsoOuter || torsoOuterPool[Math.floor(Math.random() * torsoOuterPool.length)],
+          legs: lockedItems.legs || legsPool[Math.floor(Math.random() * legsPool.length)],
+          feet: lockedItems.feet || feetPool[Math.floor(Math.random() * feetPool.length)],
+          accessory: lockedItems.accessory || accessoryPool[Math.floor(Math.random() * accessoryPool.length)]
         };
 
-        const globalScore = evaluateGlobalHarmony(candidate, formality);
+        const globalScore = evaluateGlobalHarmony(candidate, formality, generatedOutfit, lockedItems);
         candidateOutfits.push({ candidate, score: globalScore });
       }
 
-      // Selecionar o outfit com maior pontuação de styling
+      // Escolher a melhor combinação gerada
       candidateOutfits.sort((a, b) => b.score - a.score);
       const topScore = candidateOutfits[0]?.score || 0;
       const bestCandidates = candidateOutfits.filter(c => c.score >= topScore - 10);
