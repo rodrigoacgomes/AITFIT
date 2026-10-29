@@ -16,6 +16,8 @@ const LogoAITFIT = () => (
   </svg>
 );
 
+const NEUTRALS = ['preto', 'branco', 'cinza', 'cinzento', 'bege', 'castanho', 'creme', 'off-white', 'marrom', 'navy', 'azul marinho'];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('outfit');
   const [selectedDay, setSelectedDay] = useState<string>('today');
@@ -143,69 +145,95 @@ export default function App() {
     5: 'Gala / Evento'
   };
 
-  // --- FILTRAGEM DE FORMALIDADE 100% RÍGIDA E EXATA ---
-  const isItemCompatible = (item: any, targetFormality: number, currentStyle: string) => {
-    const itemFormality = Number(item.formality) || 2;
+  const isNeutralColor = (color: string) => NEUTRALS.includes((color || '').toLowerCase().trim());
 
-    // Regras de Bloqueio Rígido por Nível Escolhido
-    if (targetFormality === 5 && itemFormality < 4) return false; // Gala EXIGE Nível 4 ou 5
-    if (targetFormality === 4 && itemFormality < 3) return false; // Formal EXIGE Nível 3, 4 ou 5
-    if (targetFormality === 1 && itemFormality > 2) return false; // Desportivo REJEITA Nível 3, 4 ou 5
+  // --- HIERARQUIA E SELEÇÃO DE FORMALIDADE (TIER 1 -> TIER 2) ---
+  const getFormalityPool = (category: string, targetFormality: number) => {
+    const categoryItems = closet.filter((i: any) => i.category === category);
+    if (!categoryItems.length) return [];
 
-    // Distância máxima de formalidade entre a peça e o evento (<= 1)
-    if (Math.abs(itemFormality - targetFormality) > 1) return false;
+    // Tier 1: Nível exato selecionado
+    const tier1Exact = categoryItems.filter((i: any) => (Number(i.formality) || 2) === targetFormality);
+    if (tier1Exact.length > 0) return tier1Exact;
 
-    // Restrições de Perfil de Estilo
-    if (currentStyle === 'Smart / Elegante' && itemFormality === 1) return false;
-    if (currentStyle === 'Desportivo / Comfort' && itemFormality >= 4) return false;
-    if (currentStyle === 'Minimalista' && item.color2 && item.color2.length > 0) return false;
+    // Tier 2: Apenas se não houver Nível exato, escolhe adjacente (|delta| == 1)
+    const tier2Adjacent = categoryItems.filter((i: any) => {
+      const f = Number(i.formality) || 2;
+      if (targetFormality === 5 && f < 4) return false;
+      if (targetFormality === 4 && f < 3) return false;
+      if (targetFormality === 1 && f > 2) return false;
+      return Math.abs(f - targetFormality) === 1;
+    });
 
-    return true;
+    return tier2Adjacent;
   };
 
-  const pickSmartItem = (cat: string, targetFormality: number, currentStyle: string, basePiece: any = null) => {
-    const candidates = closet.filter((i: any) => i.category === cat);
-    if (!candidates.length) return null;
+  // --- HARMONIA CROMÁTICA ---
+  const scoreColorHarmony = (item: any, strategy: string, anchorColor: string) => {
+    if (!item || !anchorColor) return 5;
+    const c1 = (item.color1 || '').toLowerCase().trim();
+    const c2 = (item.color2 || '').toLowerCase().trim();
+    const anchor = anchorColor.toLowerCase().trim();
 
-    let validPool = candidates.filter((i: any) => isItemCompatible(i, targetFormality, currentStyle));
-
-    if (basePiece && validPool.length > 0) {
-      const baseFormality = Number(basePiece.formality) || 2;
-      validPool = validPool.filter((i: any) => Math.abs((Number(i.formality) || 2) - baseFormality) <= 1);
+    if (strategy === 'sandwich') {
+      if (c1 === anchor || c2 === anchor) return 10;
+      if (isNeutralColor(c1)) return 6;
+      return 2;
     }
 
-    // Sem fallback para peças incompatíveis (Garante que nunca sugere t-shirts em eventos formais)
-    if (!validPool.length) return null;
+    if (strategy === 'monochromatic') {
+      if (c1 === anchor || c2 === anchor) return 10;
+      if (isNeutralColor(c1) && isNeutralColor(anchor)) return 8;
+      return 1;
+    }
 
-    const colorMatches = validPool.filter((i: any) => 
-      styleProfile.preferredColors.some((c: string) => 
-        c.toLowerCase() === (i.color1 || '').toLowerCase() || 
-        c.toLowerCase() === (i.color2 || '').toLowerCase()
-      )
-    );
+    return 5;
+  };
 
-    const finalPool = colorMatches.length > 0 ? colorMatches : validPool;
-    return finalPool[Math.floor(Math.random() * finalPool.length)];
+  const pickBestItem = (category: string, targetFormality: number, strategy: string, anchorColor: string) => {
+    const pool = getFormalityPool(category, targetFormality);
+    if (!pool.length) return null;
+
+    const scored = pool.map((item: any) => ({
+      item,
+      score: scoreColorHarmony(item, strategy, anchorColor)
+    })).sort((a: any, b: any) => b.score - a.score);
+
+    const topScore = scored[0].score;
+    const bestMatches = scored.filter((s: any) => s.score === topScore).map((s: any) => s.item);
+
+    return bestMatches[Math.floor(Math.random() * bestMatches.length)];
   };
 
   const handleGenerate = () => {
     setIsGenerating(true);
     const st = getStats();
-    const currentStyle = styleProfile.primaryStyle || 'Casual Urbano';
+    
+    const colorStrategy = Math.random() > 0.5 ? 'sandwich' : 'monochromatic';
 
     setTimeout(() => {
-      const torsoBase = lockedItems.torsoBase || pickSmartItem('tronco-base', formality, currentStyle);
-      const legs = lockedItems.legs || pickSmartItem('pernas', formality, currentStyle, torsoBase);
+      const torsoBase = lockedItems.torsoBase || pickBestItem('tronco-base', formality, colorStrategy, '');
+      const anchorColor = torsoBase ? (torsoBase.color1 || '') : '';
+
+      // --- NOVAS REGRAS TÉRMICAS APLICADAS ---
+      const needsOuterLayer = st.minTemp < 12 || st.rainProb > 30; // Casaco só abaixo dos 12°C ou se chover
+      const needsMidLayer = st.minTemp < 18;                      // Camada intermédia só abaixo dos 18°C
+
+      const torsoOuter = lockedItems.torsoOuter || (needsOuterLayer ? pickBestItem('tronco-fora', formality, colorStrategy, anchorColor) : null);
+      const topColorForSandwich = torsoOuter ? torsoOuter.color1 : anchorColor;
+
+      const legs = lockedItems.legs || pickBestItem('pernas', formality, colorStrategy, anchorColor);
+      const feet = lockedItems.feet || pickBestItem('pes', formality, colorStrategy, topColorForSandwich);
 
       setGeneratedOutfit({
         id: Date.now().toString(),
-        head: lockedItems.head || pickSmartItem('cabeca', formality, currentStyle, torsoBase),
+        head: lockedItems.head || (st.minTemp < 12 ? pickBestItem('cabeca', formality, colorStrategy, anchorColor) : null),
         torsoBase: torsoBase,
-        torsoMid: lockedItems.torsoMid || (st.minTemp < 18 ? pickSmartItem('tronco-meio', formality, currentStyle, torsoBase) : null),
-        torsoOuter: lockedItems.torsoOuter || (st.minTemp < 15 || st.rainProb > 30 ? pickSmartItem('tronco-fora', formality, currentStyle, torsoBase) : null),
+        torsoMid: lockedItems.torsoMid || (needsMidLayer ? pickBestItem('tronco-meio', formality, colorStrategy, anchorColor) : null),
+        torsoOuter: torsoOuter,
         legs: legs,
-        feet: lockedItems.feet || pickSmartItem('pes', formality, currentStyle, legs),
-        accessory: lockedItems.accessory || pickSmartItem('acessorios', formality, currentStyle, torsoBase),
+        feet: feet,
+        accessory: lockedItems.accessory || pickBestItem('acessorios', formality, colorStrategy, anchorColor),
         date: new Date().toLocaleDateString('pt-PT')
       });
       setIsGenerating(false);
@@ -266,14 +294,14 @@ export default function App() {
   const loadSampleCloset = () => {
     const samples = [
       { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio', formality: 1 },
-      { id: '2', name: 'T-Shirt Adidas', category: 'tronco-base', fit: 'Oversized', color1: 'Bege', color2: '', weather: 'Quente', formality: 1 },
+      { id: '2', name: 'T-Shirt Básica', category: 'tronco-base', fit: 'Normal', color1: 'Branco', color2: '', weather: 'Quente', formality: 2 },
       { id: '3', name: 'Quarter Zip Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio', formality: 3 },
       { id: '4', name: 'Blazer Alfaiataria', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
       { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno', formality: 3 },
-      { id: '6', name: 'Calças de Fato de Treino', category: 'pernas', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Ameno', formality: 1 },
-      { id: '7', name: 'Sapatilhas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: 'Azul', weather: 'Ameno', formality: 2 },
-      { id: '8', name: 'Sapatos de Pele Clássicos', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
-      { id: '9', name: 'Mochila Urbana', category: 'acessorios', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 2 }
+      { id: '6', name: 'Calças Alfaiataria', category: 'pernas', fit: 'Slim', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
+      { id: '7', name: 'Calças Fato de Treino', category: 'pernas', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Ameno', formality: 1 },
+      { id: '8', name: 'Sapatilhas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: 'Azul', weather: 'Ameno', formality: 2 },
+      { id: '9', name: 'Sapatos Clássicos', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 }
     ];
     setCloset(samples);
   };
@@ -398,7 +426,7 @@ export default function App() {
             </div>
 
             <div className="bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800 space-y-2">
-              <span className="text-xs font-semibold">Nível de Formalidade do Outfit</span>
+              <span className="text-xs font-semibold">Nível de Formalidade Pretendido</span>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { level: 1, name: 'Desportivo' },
@@ -425,7 +453,7 @@ export default function App() {
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 font-bold text-black text-sm shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 hover:opacity-95"
             >
               <span>✨</span>
-              {isGenerating ? 'A alinhar estilo e clima...' : 'Gerar Outfit Personalizado'}
+              {isGenerating ? 'A alinhar cores e clima...' : 'Gerar Outfit Personalizado'}
             </button>
 
             {generatedOutfit && (
@@ -756,7 +784,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* CAMPO DE FORMALIDADE EXPLICITO DA PEÇA */}
               <div>
                 <label className="block text-zinc-300 font-semibold mb-1.5">Nível de Formalidade da Peça</label>
                 <div className="grid grid-cols-5 gap-1">
