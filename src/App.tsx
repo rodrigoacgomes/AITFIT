@@ -64,7 +64,8 @@ export default function App() {
     fit: 'Normal',
     color1: '',
     color2: '',
-    weather: 'Ameno'
+    weather: 'Ameno',
+    formality: 2
   });
 
   useEffect(() => {
@@ -134,62 +135,30 @@ export default function App() {
     setTimeSlots((prev: any) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // --- MOTOR DE REGRAS DE MODA E FORMALIDADE REFINADO ---
-  const getItemFormality = (item: any): number => {
-    if (!item) return 2;
-    const text = `${item.name} ${item.category} ${item.fit}`.toLowerCase();
-
-    // Nível 1: Estritamente Desportivo
-    if (text.includes('fato de treino') || text.includes('jogger') || text.includes('corrida') || 
-        text.includes('treino') || text.includes('desportiv') || text.includes('calções de treino') ||
-        text.includes('sweatpants')) {
-      return 1;
-    }
-    // Nível 4: Formal / Alfaiataria
-    if (text.includes('blazer') || text.includes('fato') || text.includes('alfaiataria') || 
-        text.includes('cerimónia') || text.includes('smoking') || text.includes('sobretudo') ||
-        text.includes('camisa formal')) {
-      return 4;
-    }
-    // Nível 3: Smart Casual / Quase Formal (Quarter Zip incluído aqui)
-    if (text.includes('chino') || text.includes('polo') || text.includes('linho') || 
-        text.includes('oxford') || text.includes('tricot') || text.includes('loafer') || 
-        text.includes('mocassim') || text.includes('quarter zip') || text.includes('half zip') || 
-        text.includes('1/4 zip') || text.includes('zip neck')) {
-      return 3;
-    }
-    return 2; // Casual Padrão
+  const formalityLabels: { [key: number]: string } = {
+    1: 'Desportivo',
+    2: 'Casual',
+    3: 'Smart Casual',
+    4: 'Formal',
+    5: 'Gala / Evento'
   };
 
+  // --- FILTRAGEM DE FORMALIDADE 100% RÍGIDA E EXATA ---
   const isItemCompatible = (item: any, targetFormality: number, currentStyle: string) => {
-    const itemFormality = getItemFormality(item);
+    const itemFormality = Number(item.formality) || 2;
 
-    // BLOQUEIO RIGOROSO: Nível 1 (Desportivo) REJEITA qualquer peça de Nível 3 ou superior (Ex: Quarter Zip, Chinos, Blazers)
-    if (targetFormality === 1 && itemFormality >= 3) {
-      return false;
-    }
+    // Regras de Bloqueio Rígido por Nível Escolhido
+    if (targetFormality === 5 && itemFormality < 4) return false; // Gala EXIGE Nível 4 ou 5
+    if (targetFormality === 4 && itemFormality < 3) return false; // Formal EXIGE Nível 3, 4 ou 5
+    if (targetFormality === 1 && itemFormality > 2) return false; // Desportivo REJEITA Nível 3, 4 ou 5
 
-    // BLOQUEIO RIGOROSO: Nível 4/5 (Formal) REJEITA peças de Nível 1 ou 2 (Ex: Fato de Treino, Joggers, T-Shirts Gráficas)
-    if (targetFormality >= 4 && itemFormality <= 2) {
-      return false;
-    }
+    // Distância máxima de formalidade entre a peça e o evento (<= 1)
+    if (Math.abs(itemFormality - targetFormality) > 1) return false;
 
-    // Regra da Distância Máxima (|Formality_item - Formality_target| <= 1)
-    if (Math.abs(itemFormality - targetFormality) > 1) {
-      return false;
-    }
-
-    const text = `${item.name} ${item.category}`.toLowerCase();
-
-    if (currentStyle === 'Smart / Elegante') {
-      if (itemFormality === 1 || text.includes('fato de treino') || text.includes('jogger')) return false;
-    }
-    if (currentStyle === 'Desportivo / Comfort') {
-      if (itemFormality >= 4 || text.includes('blazer') || text.includes('alfaiataria')) return false;
-    }
-    if (currentStyle === 'Minimalista') {
-      if (item.color2 && item.color2.length > 0) return false;
-    }
+    // Restrições de Perfil de Estilo
+    if (currentStyle === 'Smart / Elegante' && itemFormality === 1) return false;
+    if (currentStyle === 'Desportivo / Comfort' && itemFormality >= 4) return false;
+    if (currentStyle === 'Minimalista' && item.color2 && item.color2.length > 0) return false;
 
     return true;
   };
@@ -201,20 +170,21 @@ export default function App() {
     let validPool = candidates.filter((i: any) => isItemCompatible(i, targetFormality, currentStyle));
 
     if (basePiece && validPool.length > 0) {
-      const baseFormality = getItemFormality(basePiece);
-      validPool = validPool.filter((i: any) => Math.abs(getItemFormality(i) - baseFormality) <= 1);
+      const baseFormality = Number(basePiece.formality) || 2;
+      validPool = validPool.filter((i: any) => Math.abs((Number(i.formality) || 2) - baseFormality) <= 1);
     }
 
-    const pool = validPool.length > 0 ? validPool : candidates;
+    // Sem fallback para peças incompatíveis (Garante que nunca sugere t-shirts em eventos formais)
+    if (!validPool.length) return null;
 
-    const colorMatches = pool.filter((i: any) => 
+    const colorMatches = validPool.filter((i: any) => 
       styleProfile.preferredColors.some((c: string) => 
         c.toLowerCase() === (i.color1 || '').toLowerCase() || 
         c.toLowerCase() === (i.color2 || '').toLowerCase()
       )
     );
 
-    const finalPool = colorMatches.length > 0 ? colorMatches : pool;
+    const finalPool = colorMatches.length > 0 ? colorMatches : validPool;
     return finalPool[Math.floor(Math.random() * finalPool.length)];
   };
 
@@ -244,7 +214,7 @@ export default function App() {
 
   const openAddModal = () => {
     setEditingItemId(null);
-    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno' });
+    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno', formality: 2 });
     setIsAddModalOpen(true);
   };
 
@@ -256,7 +226,8 @@ export default function App() {
       fit: item.fit || 'Normal',
       color1: item.color1 || '',
       color2: item.color2 || '',
-      weather: item.weather || 'Ameno'
+      weather: item.weather || 'Ameno',
+      formality: item.formality || 2
     });
     setIsAddModalOpen(true);
   };
@@ -272,7 +243,7 @@ export default function App() {
     }
 
     setEditingItemId(null);
-    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno' });
+    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno', formality: 2 });
     setIsAddModalOpen(false);
   };
 
@@ -294,13 +265,15 @@ export default function App() {
 
   const loadSampleCloset = () => {
     const samples = [
-      { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio' },
-      { id: '2', name: 'T-Shirt Básica', category: 'tronco-base', fit: 'Oversized', color1: 'Branco', color2: '', weather: 'Quente' },
-      { id: '3', name: 'Quarter Zip Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio' },
-      { id: '4', name: 'Casaco Bomber', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: 'Laranja', weather: 'Frio' },
-      { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno' },
-      { id: '6', name: 'Sapatilhas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: 'Azul', weather: 'Ameno' },
-      { id: '7', name: 'Mochila Urbana', category: 'acessorios', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno' }
+      { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio', formality: 1 },
+      { id: '2', name: 'T-Shirt Adidas', category: 'tronco-base', fit: 'Oversized', color1: 'Bege', color2: '', weather: 'Quente', formality: 1 },
+      { id: '3', name: 'Quarter Zip Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio', formality: 3 },
+      { id: '4', name: 'Blazer Alfaiataria', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
+      { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno', formality: 3 },
+      { id: '6', name: 'Calças de Fato de Treino', category: 'pernas', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Ameno', formality: 1 },
+      { id: '7', name: 'Sapatilhas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: 'Azul', weather: 'Ameno', formality: 2 },
+      { id: '8', name: 'Sapatos de Pele Clássicos', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
+      { id: '9', name: 'Mochila Urbana', category: 'acessorios', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 2 }
     ];
     setCloset(samples);
   };
@@ -321,9 +294,11 @@ export default function App() {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
     const catLabel = (categoryLabels[item.category] || item.category).toLowerCase();
+    const formLabel = (formalityLabels[item.formality] || '').toLowerCase();
     return (
       (item.name || '').toLowerCase().includes(query) ||
       catLabel.includes(query) ||
+      formLabel.includes(query) ||
       (item.fit || '').toLowerCase().includes(query) ||
       (item.color1 || '').toLowerCase().includes(query) ||
       (item.color2 || '').toLowerCase().includes(query) ||
@@ -340,9 +315,12 @@ export default function App() {
         {item && (
           <div className="text-[10px] text-zinc-300 mt-1 flex items-center gap-1.5 flex-wrap">
             <span className="bg-sky-500/20 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 rounded font-semibold text-[9px] uppercase">
+              Nvl {item.formality || 2}
+            </span>
+            <span className="bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded font-medium text-[9px]">
               {item.fit || 'Normal'}
             </span>
-            <span className="bg-zinc-800 text-zinc-200 px-1.5 py-0.5 rounded text-[9px]">
+            <span className="bg-zinc-800 text-zinc-300 px-1.5 py-0.5 rounded text-[9px]">
               {item.color1}{item.color2 ? ` / ${item.color2}` : ''}
             </span>
           </div>
@@ -420,7 +398,7 @@ export default function App() {
             </div>
 
             <div className="bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800 space-y-2">
-              <span className="text-xs font-semibold">Nível de Formalidade</span>
+              <span className="text-xs font-semibold">Nível de Formalidade do Outfit</span>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { level: 1, name: 'Desportivo' },
@@ -615,9 +593,15 @@ export default function App() {
                         </button>
                       </div>
                     </div>
-                    <div className="text-[10px] text-zinc-400 pt-1.5 border-t border-zinc-800/80 flex flex-wrap gap-x-2 gap-y-0.5">
-                      <span>Fit: <strong className="text-zinc-200">{item.fit || 'Normal'}</strong></span>
-                      <span>Cores: <strong className="text-zinc-200">{item.color1 || 'N/A'}{item.color2 ? ` / ${item.color2}` : ''}</strong></span>
+                    <div className="text-[10px] text-zinc-400 pt-1.5 border-t border-zinc-800/80 space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Formalidade:</span>
+                        <strong className="text-sky-300">Nvl {item.formality || 2} ({formalityLabels[item.formality || 2]})</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Fit / Cores:</span>
+                        <strong className="text-zinc-200">{item.fit || 'Normal'} • {item.color1}</strong>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -648,7 +632,7 @@ export default function App() {
                       {['head', 'torsoBase', 'torsoMid', 'torsoOuter', 'legs', 'feet', 'accessory'].map((s: string) => fav[s] && (
                         <div key={s} className="text-xs text-zinc-300 flex justify-between bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800/60">
                           <span className="text-sky-400 text-[10px] uppercase font-semibold">{s.replace('torso', 'tronco ')}:</span>
-                          <span className="font-medium text-zinc-200">{fav[s].name} ({fav[s].fit || 'Normal'})</span>
+                          <span className="font-medium text-zinc-200">{fav[s].name} (Nvl {fav[s].formality || 2})</span>
                         </div>
                       ))}
                     </div>
@@ -770,6 +754,26 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* CAMPO DE FORMALIDADE EXPLICITO DA PEÇA */}
+              <div>
+                <label className="block text-zinc-300 font-semibold mb-1.5">Nível de Formalidade da Peça</label>
+                <div className="grid grid-cols-5 gap-1">
+                  {[1, 2, 3, 4, 5].map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setNewItem((p: any) => ({ ...p, formality: lvl }))}
+                      className={`py-2 rounded-lg border text-center text-[10px] font-bold ${newItem.formality === lvl ? 'bg-sky-500 text-black border-sky-400' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}
+                    >
+                      Nvl {lvl}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] text-sky-400 font-medium mt-1 block">
+                  {formalityLabels[newItem.formality || 2]}
+                </span>
               </div>
 
               <div>
