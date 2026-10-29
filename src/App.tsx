@@ -134,21 +134,28 @@ export default function App() {
     setTimeSlots((prev: any) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // --- MOTOR DE REGRAS DE MODA E FORMALIDADE ---
+  // --- MOTOR DE REGRAS DE MODA E FORMALIDADE REFINADO ---
   const getItemFormality = (item: any): number => {
     if (!item) return 2;
     const text = `${item.name} ${item.category} ${item.fit}`.toLowerCase();
 
+    // Nível 1: Estritamente Desportivo
     if (text.includes('fato de treino') || text.includes('jogger') || text.includes('corrida') || 
-        text.includes('treino') || text.includes('desportiv') || text.includes('calções de treino')) {
+        text.includes('treino') || text.includes('desportiv') || text.includes('calções de treino') ||
+        text.includes('sweatpants')) {
       return 1;
     }
+    // Nível 4: Formal / Alfaiataria
     if (text.includes('blazer') || text.includes('fato') || text.includes('alfaiataria') || 
-        text.includes('cerimónia') || text.includes('smoking') || text.includes('sobretudo')) {
+        text.includes('cerimónia') || text.includes('smoking') || text.includes('sobretudo') ||
+        text.includes('camisa formal')) {
       return 4;
     }
+    // Nível 3: Smart Casual / Quase Formal (Quarter Zip incluído aqui)
     if (text.includes('chino') || text.includes('polo') || text.includes('linho') || 
-        text.includes('oxford') || text.includes('tricot') || text.includes('loafer') || text.includes('mocassim')) {
+        text.includes('oxford') || text.includes('tricot') || text.includes('loafer') || 
+        text.includes('mocassim') || text.includes('quarter zip') || text.includes('half zip') || 
+        text.includes('1/4 zip') || text.includes('zip neck')) {
       return 3;
     }
     return 2; // Casual Padrão
@@ -157,14 +164,23 @@ export default function App() {
   const isItemCompatible = (item: any, targetFormality: number, currentStyle: string) => {
     const itemFormality = getItemFormality(item);
 
-    // Regra da Distância Máxima de Formalidade (|Formality_item - Formality_target| <= 1)
+    // BLOQUEIO RIGOROSO: Nível 1 (Desportivo) REJEITA qualquer peça de Nível 3 ou superior (Ex: Quarter Zip, Chinos, Blazers)
+    if (targetFormality === 1 && itemFormality >= 3) {
+      return false;
+    }
+
+    // BLOQUEIO RIGOROSO: Nível 4/5 (Formal) REJEITA peças de Nível 1 ou 2 (Ex: Fato de Treino, Joggers, T-Shirts Gráficas)
+    if (targetFormality >= 4 && itemFormality <= 2) {
+      return false;
+    }
+
+    // Regra da Distância Máxima (|Formality_item - Formality_target| <= 1)
     if (Math.abs(itemFormality - targetFormality) > 1) {
       return false;
     }
 
     const text = `${item.name} ${item.category}`.toLowerCase();
 
-    // Bloqueios Rígidos por Estilo
     if (currentStyle === 'Smart / Elegante') {
       if (itemFormality === 1 || text.includes('fato de treino') || text.includes('jogger')) return false;
     }
@@ -182,19 +198,15 @@ export default function App() {
     const candidates = closet.filter((i: any) => i.category === cat);
     if (!candidates.length) return null;
 
-    // Filtro 1: Regras do Guião de Moda & Formalidade
     let validPool = candidates.filter((i: any) => isItemCompatible(i, targetFormality, currentStyle));
 
-    // Filtro 2: Garantir que a distância para a peça base no look é <= 1
     if (basePiece && validPool.length > 0) {
       const baseFormality = getItemFormality(basePiece);
       validPool = validPool.filter((i: any) => Math.abs(getItemFormality(i) - baseFormality) <= 1);
     }
 
-    // Se o filtro for muito rigoroso e não houver peças, usa candidatos da categoria sem quebrar a app
     const pool = validPool.length > 0 ? validPool : candidates;
 
-    // Priorizar cores preferidas do perfil se disponível
     const colorMatches = pool.filter((i: any) => 
       styleProfile.preferredColors.some((c: string) => 
         c.toLowerCase() === (i.color1 || '').toLowerCase() || 
@@ -212,7 +224,6 @@ export default function App() {
     const currentStyle = styleProfile.primaryStyle || 'Casual Urbano';
 
     setTimeout(() => {
-      // 1. Definir a peça âncora principal (Tronco Base ou Pernas)
       const torsoBase = lockedItems.torsoBase || pickSmartItem('tronco-base', formality, currentStyle);
       const legs = lockedItems.legs || pickSmartItem('pernas', formality, currentStyle, torsoBase);
 
@@ -285,7 +296,7 @@ export default function App() {
     const samples = [
       { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio' },
       { id: '2', name: 'T-Shirt Básica', category: 'tronco-base', fit: 'Oversized', color1: 'Branco', color2: '', weather: 'Quente' },
-      { id: '3', name: 'Camisola Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio' },
+      { id: '3', name: 'Quarter Zip Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio' },
       { id: '4', name: 'Casaco Bomber', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: 'Laranja', weather: 'Frio' },
       { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno' },
       { id: '6', name: 'Sapatilhas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: 'Azul', weather: 'Ameno' },
@@ -306,7 +317,6 @@ export default function App() {
     'acessorios': 'Acessórios'
   };
 
-  // Filtragem do Closet pela Barra de Pesquisa
   const filteredCloset = closet.filter((item: any) => {
     const query = searchQuery.toLowerCase().trim();
     if (!query) return true;
@@ -321,7 +331,6 @@ export default function App() {
     );
   });
 
-  // Caixas Retangulares do Lado Direito no Esquema
   const ItemBox = ({ slotKey, item, placeholder }: { slotKey: string; item: any; placeholder: string }) => (
     <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${item ? 'bg-zinc-900 border-sky-500/50' : 'bg-zinc-950/40 border-zinc-800/80 border-dashed'}`}>
       <div className="overflow-hidden pr-2 flex-1">
@@ -441,7 +450,6 @@ export default function App() {
               {isGenerating ? 'A alinhar estilo e clima...' : 'Gerar Outfit Personalizado'}
             </button>
 
-            {/* ESQUEMA EM 2 COLUNAS */}
             {generatedOutfit && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
@@ -455,7 +463,6 @@ export default function App() {
                 </div>
 
                 <div className="bg-zinc-900/70 rounded-2xl border border-zinc-800 p-3.5 space-y-4">
-                  {/* CABEÇA */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2 }}>
@@ -468,7 +475,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* TRONCO */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-6 px-1 rounded-xl">
                       <svg viewBox="0 0 50 50" className="w-10 h-10 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -483,7 +489,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* PERNAS */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -496,7 +501,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* PÉS */}
                   <div className="grid grid-cols-12 gap-3 items-center">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -509,7 +513,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* ACESSÓRIOS */}
                   <div className="grid grid-cols-12 gap-3 items-center pt-2 border-t border-zinc-800/60">
                     <div className="col-span-4 flex flex-col items-center justify-center bg-zinc-950/60 border border-zinc-800/60 py-2.5 px-1 rounded-xl">
                       <svg viewBox="0 0 40 40" className="w-8 h-8 text-sky-400 fill-none stroke-current" style={{ strokeWidth: 2, strokeLinecap: 'round' }}>
@@ -552,7 +555,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* BARRA DE PESQUISA NO CLOSET */}
             {closet.length > 0 && (
               <div className="relative">
                 <input
