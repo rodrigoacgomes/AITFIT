@@ -16,7 +16,11 @@ const LogoAITFIT = () => (
   </svg>
 );
 
-const NEUTRALS = ['preto', 'branco', 'cinza', 'cinzento', 'bege', 'castanho', 'creme', 'off-white', 'marrom', 'navy', 'azul marinho', 'azul-marinho', 'jeans', 'ganga', 'caqui', 'kaki'];
+const NEUTRALS = [
+  'preto', 'black', 'branco', 'white', 'cinza', 'cinzento', 'gray', 'grey',
+  'bege', 'beige', 'creme', 'off-white', 'marrom', 'navy', 'azul marinho',
+  'azul-marinho', 'jeans', 'ganga', 'caqui', 'kaki', 'camel', 'tan', 'nude'
+];
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('outfit');
@@ -67,7 +71,9 @@ export default function App() {
     color1: '',
     color2: '',
     weather: 'Ameno',
-    formality: 2
+    formality: 2,
+    hasPattern: false,
+    material: 'algodão'
   });
 
   useEffect(() => {
@@ -151,7 +157,7 @@ export default function App() {
     return NEUTRALS.some(n => c.includes(n));
   };
 
-  // --- FILTRAGEM COM FALLBACK EXTREMO (REGRA 1) ---
+  // --- FILTRAGEM RIGIDA DE FORMALIDADE DE PEÇAS COM FALLBACK (TIER 1, 2 e 3) ---
   const getCategoryPool = (category: string, targetFormality: number) => {
     const items = closet.filter((i: any) => i.category === category);
     if (!items.length) return [null];
@@ -169,12 +175,38 @@ export default function App() {
     });
     if (tier2.length > 0) return tier2;
 
-    // Tier 3 (REGRA 1 - Fallback Extremo): Se não houver nada compatível, devolve qualquer peça da categoria
+    // Tier 3: Fallback de Último Recurso (se não houver peças compatíveis, permite qualquer uma da categoria)
     return items;
   };
 
-  // --- MOTOR GLOBAL DE STYLING E RENOVAÇÃO DE UNLOCKED (REGRA 2) ---
-  const evaluateGlobalHarmony = (candidate: any, targetFormality: number, currentOutfit: any, locked: any) => {
+  // --- VERIFICAÇÃO DE BLOQUEIOS CROMÁTICOS RÍGIDOS ---
+  const hasIncompatibleColorClash = (colors: string[]) => {
+    const cStr = colors.join(' ').toLowerCase();
+
+    // 1. Azul-Marinho / Escuro + Preto
+    const hasNavy = cStr.includes('navy') || cStr.includes('azul-marinho') || cStr.includes('azul marinho');
+    const hasBlack = cStr.includes('preto') || cStr.includes('black');
+    if (hasNavy && hasBlack) {
+      // Exceção: permitido se houver cores claras de transição (bege, camel, branco)
+      const hasLightTransition = cStr.includes('bege') || cStr.includes('camel') || cStr.includes('branco');
+      if (!hasLightTransition) return true;
+    }
+
+    // 2. Castanho-Escuro / Chocolate + Preto
+    const hasDarkBrown = (cStr.includes('castanho') || cStr.includes('marrom') || cStr.includes('chocolate')) && 
+                        !cStr.includes('camel') && !cStr.includes('tan') && !cStr.includes('bege') && !cStr.includes('nude');
+    if (hasDarkBrown && hasBlack) return true;
+
+    // 3. Vermelho Vivo + Verde Vivo
+    const hasSaturatedRed = cStr.includes('vermelho') && !cStr.includes('bordô') && !cStr.includes('vinho');
+    const hasSaturatedGreen = cStr.includes('verde') && !cStr.includes('militar') && !cStr.includes('oliva');
+    if (hasSaturatedRed && hasSaturatedGreen) return true;
+
+    return false;
+  };
+
+  // --- MOTOR MATRICIAL GLOBAL DE DECISÃO & AVALIAÇÃO DE STYLING ---
+  const evaluateGlobalHarmony = (candidate: any, targetFormality: number, currentOutfit: any, locked: any, rainProb: number) => {
     let score = 50;
 
     const activeItems = [
@@ -189,76 +221,99 @@ export default function App() {
 
     if (activeItems.length === 0) return 0;
 
-    // REGRA 2: Bónus de Renovação nas Peças NÃO Bloqueadas
+    // A. AVALIAÇÃO DE REGRA DA DISTÂNCIA MAXIMA DE FORMALIDADE (|F_topo - F_base| <= 1)
+    const topItem = candidate.torsoOuter || candidate.torsoMid || candidate.torsoBase;
+    if (topItem && candidate.legs) {
+      const topFormality = Number(topItem.formality) || 2;
+      const legsFormality = Number(candidate.legs.formality) || 2;
+      const deltaFormality = Math.abs(topFormality - legsFormality);
+
+      // Desqualificar se a formalidade do topo e das pernas for distante (Delta > 1)
+      if (deltaFormality > 1) {
+        return -999; 
+      }
+    }
+
+    // B. REGRA DA PEÇA FOCAL ÚNICA (MAXIMO 1 PEÇA COM ESTAMPADO/GRAFISMO)
+    const patternedCount = activeItems.filter((i: any) => i.hasPattern).length;
+    if (patternedCount > 1) {
+      return -999; // Rejeitar ruído de estampados
+    }
+
+    // C. PROTEÇÃO PLUVIAL (Chuva >= 30% proíbe camurça e lona no calçado)
+    if (rainProb >= 30 && candidate.feet) {
+      const feetMat = (candidate.feet.material || '').toLowerCase();
+      const feetName = (candidate.feet.name || '').toLowerCase();
+      if (feetMat.includes('camurça') || feetMat.includes('lona') || feetName.includes('camurça') || feetName.includes('lona')) {
+        return -999;
+      }
+    }
+
+    // D. BLOQUEIOS CROMÁTICOS RÍGIDOS
+    const colors = activeItems.map((i: any) => (i.color1 || '').toLowerCase().trim()).filter(Boolean);
+    if (hasIncompatibleColorClash(colors)) {
+      return -999; // Bloquear combinação cromática proibida
+    }
+
+    // E. ROTAÇÃO ATIVA DE PEÇAS NÃO BLOQUEADAS (🔒)
     if (currentOutfit) {
       const slots = ['head', 'torsoBase', 'torsoMid', 'torsoOuter', 'legs', 'feet', 'accessory'];
       slots.forEach((slot) => {
         if (!locked[slot] && candidate[slot] && currentOutfit[slot]) {
           if (candidate[slot].id !== currentOutfit[slot].id) {
-            score += 10; // Força ativamente a mudar as peças destravadas
+            score += 10;
           }
         }
       });
     }
 
-    // 1. HARMONIA DE CORES (Regra 60-30-10 & Esquemas Cromáticos)
-    const colors = activeItems.map((i: any) => (i.color1 || '').toLowerCase().trim()).filter(Boolean);
+    // F. HARMONIA DE CORES (Regra 60-30-10 & Esquemas Cromáticos)
     const nonNeutrals = colors.filter((c: string) => !isNeutralColor(c));
     const uniqueNonNeutrals = Array.from(new Set(nonNeutrals));
 
     if (uniqueNonNeutrals.length === 0) {
-      score += 25; // All-Neutral
+      score += 25; // Look Monocromático / All-Neutral
     } else if (uniqueNonNeutrals.length === 1) {
-      score += 35; // Pop de Cor Perfeito
+      score += 35; // Regra 60-30-10 (Base Neutra + 1 Destaque)
     } else if (uniqueNonNeutrals.length === 2) {
-      score += 10;
+      score += 5;
     } else {
-      score -= 45; // Choque cromático
+      score -= 45; // Penalização por excesso de cores vibrantes
     }
 
     // Regra Sanduíche (Topo espelha os Pés)
-    const topItem = candidate.torsoOuter || candidate.torsoMid || candidate.torsoBase;
     if (topItem && candidate.feet) {
       const topColor = (topItem.color1 || '').toLowerCase().trim();
       const feetColor = (candidate.feet.color1 || '').toLowerCase().trim();
       if (topColor && feetColor && topColor === feetColor) {
-        score += 15;
+        score += 20;
       }
     }
 
-    // 2. PROPORÇÕES E SILHUETA (Contraponto de Fit)
+    // G. PROPORÇÕES E LEI DO CONTRAPONTO DE VOLUME (Fit Balance)
     const topFit = (topItem?.fit || 'Normal').toLowerCase();
     const legsFit = (candidate.legs?.fit || 'Normal').toLowerCase();
 
     if (topFit === 'oversized') {
       if (legsFit === 'slim' || legsFit === 'normal') {
-        score += 20;
+        score += 20; // Bónus de contraponto perfeito
       } else if (legsFit === 'oversized') {
         score -= 10;
       }
     } else if (topFit === 'slim') {
       if (legsFit === 'oversized' || legsFit === 'normal') {
-        score += 20;
+        score += 20; // Bónus de contraponto perfeito
       }
     } else {
       score += 10;
     }
 
-    // 3. LAYERING & TERCEIRA PEÇA
+    // H. LAYERING E TERCEIRA PEÇA
     if (candidate.torsoMid || candidate.torsoOuter) {
       score += 15;
     }
 
-    // Contraste High-Low
-    if (candidate.legs && candidate.feet) {
-      const legsFormality = Number(candidate.legs.formality) || 2;
-      const feetFormality = Number(candidate.feet.formality) || 2;
-      if (legsFormality >= 3 && feetFormality === 2) {
-        score += 15;
-      }
-    }
-
-    // 4. FORMALIDADE DE SUPORTE
+    // I. FORMALIDADE DE SUPORTE
     activeItems.forEach((i: any) => {
       const f = Number(i.formality) || 2;
       if (f === targetFormality) score += 5;
@@ -272,7 +327,8 @@ export default function App() {
     const st = getStats();
 
     setTimeout(() => {
-      const needsOuter = st.minTemp < 12 || st.rainProb > 30;
+      // Regras Climáticas
+      const needsOuter = st.minTemp < 12 || st.rainProb >= 30;
       const needsMid = st.minTemp < 18;
 
       const torsoBasePool = lockedItems.torsoBase ? [lockedItems.torsoBase] : getCategoryPool('tronco-base', formality);
@@ -287,6 +343,7 @@ export default function App() {
         ? [lockedItems.torsoOuter] 
         : (needsOuter ? getCategoryPool('tronco-fora', formality) : [null]);
 
+      // Acessórios de cabeça são independentes de gatilhos térmicos
       const headBase = getCategoryPool('cabeca', formality).filter(Boolean);
       const headPool = lockedItems.head 
         ? [lockedItems.head] 
@@ -296,9 +353,9 @@ export default function App() {
         ? [lockedItems.accessory] 
         : getCategoryPool('acessorios', formality);
 
-      // Simular combinações de outfits e avaliar com bónus de mudança para peças não bloqueadas
+      // Simulação Matrocinada de Combinações Globais
       const candidateOutfits: any[] = [];
-      const numSamples = 100;
+      const numSamples = 120;
 
       for (let i = 0; i < numSamples; i++) {
         const candidate = {
@@ -311,19 +368,21 @@ export default function App() {
           accessory: lockedItems.accessory || accessoryPool[Math.floor(Math.random() * accessoryPool.length)]
         };
 
-        const globalScore = evaluateGlobalHarmony(candidate, formality, generatedOutfit, lockedItems);
+        const globalScore = evaluateGlobalHarmony(candidate, formality, generatedOutfit, lockedItems, st.rainProb);
         candidateOutfits.push({ candidate, score: globalScore });
       }
 
-      // Escolher a melhor combinação gerada
+      // Ordenar e selecionar o melhor outfit aprovado
       candidateOutfits.sort((a, b) => b.score - a.score);
-      const topScore = candidateOutfits[0]?.score || 0;
-      const bestCandidates = candidateOutfits.filter(c => c.score >= topScore - 10);
-      const selectedOutfit = bestCandidates[Math.floor(Math.random() * bestCandidates.length)].candidate;
+      const validCandidates = candidateOutfits.filter(c => c.score > -100);
+      
+      const bestOutfit = validCandidates.length > 0 
+        ? validCandidates[Math.floor(Math.random() * Math.min(3, validCandidates.length))].candidate
+        : candidateOutfits[0].candidate;
 
       setGeneratedOutfit({
         id: Date.now().toString(),
-        ...selectedOutfit,
+        ...bestOutfit,
         date: new Date().toLocaleDateString('pt-PT')
       });
 
@@ -333,7 +392,7 @@ export default function App() {
 
   const openAddModal = () => {
     setEditingItemId(null);
-    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno', formality: 2 });
+    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno', formality: 2, hasPattern: false, material: 'algodão' });
     setIsAddModalOpen(true);
   };
 
@@ -346,7 +405,9 @@ export default function App() {
       color1: item.color1 || '',
       color2: item.color2 || '',
       weather: item.weather || 'Ameno',
-      formality: item.formality || 2
+      formality: item.formality || 2,
+      hasPattern: item.hasPattern || false,
+      material: item.material || 'algodão'
     });
     setIsAddModalOpen(true);
   };
@@ -362,7 +423,7 @@ export default function App() {
     }
 
     setEditingItemId(null);
-    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno', formality: 2 });
+    setNewItem({ name: '', category: 'tronco-base', fit: 'Normal', color1: '', color2: '', weather: 'Ameno', formality: 2, hasPattern: false, material: 'algodão' });
     setIsAddModalOpen(false);
   };
 
@@ -384,17 +445,17 @@ export default function App() {
 
   const loadSampleCloset = () => {
     const samples = [
-      { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio', formality: 1 },
-      { id: '2', name: 'T-Shirt Básica', category: 'tronco-base', fit: 'Normal', color1: 'Branco', color2: '', weather: 'Quente', formality: 2 },
-      { id: '3', name: 'Quarter Zip Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio', formality: 3 },
-      { id: '4', name: 'Blazer Alfaiataria', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
-      { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno', formality: 3 },
-      { id: '6', name: 'Calças Alfaiataria', category: 'pernas', fit: 'Slim', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 },
-      { id: '7', name: 'Calças Fato de Treino', category: 'pernas', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Ameno', formality: 1 },
-      { id: '8', name: 'Sapatilhas Brancas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: '', weather: 'Ameno', formality: 2 },
-      { id: '9', name: 'Sapatilhas Verdes Vintage', category: 'pes', fit: 'Normal', color1: 'Verde', color2: 'Branco', weather: 'Ameno', formality: 2 },
-      { id: '10', name: 'Sapatilhas Pretas Urban', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 2 },
-      { id: '11', name: 'Sapatos Clássicos', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4 }
+      { id: '1', name: 'Gorro Knit', category: 'cabeca', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Frio', formality: 1, hasPattern: false },
+      { id: '2', name: 'T-Shirt Básica', category: 'tronco-base', fit: 'Normal', color1: 'Branco', color2: '', weather: 'Quente', formality: 2, hasPattern: false },
+      { id: '3', name: 'Quarter Zip Tricot', category: 'tronco-meio', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Frio', formality: 3, hasPattern: false },
+      { id: '4', name: 'Blazer Alfaiataria', category: 'tronco-fora', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4, hasPattern: false },
+      { id: '5', name: 'Calças Chino', category: 'pernas', fit: 'Slim', color1: 'Bege', color2: '', weather: 'Ameno', formality: 3, hasPattern: false },
+      { id: '6', name: 'Calças Alfaiataria', category: 'pernas', fit: 'Slim', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4, hasPattern: false },
+      { id: '7', name: 'Calças Fato de Treino', category: 'pernas', fit: 'Normal', color1: 'Cinza', color2: '', weather: 'Ameno', formality: 1, hasPattern: false },
+      { id: '8', name: 'Sapatilhas Brancas Retro', category: 'pes', fit: 'Normal', color1: 'Branco', color2: '', weather: 'Ameno', formality: 2, hasPattern: false, material: 'pele' },
+      { id: '9', name: 'Sapatilhas Verdes Vintage', category: 'pes', fit: 'Normal', color1: 'Verde', color2: 'Branco', weather: 'Ameno', formality: 2, hasPattern: false, material: 'lona' },
+      { id: '10', name: 'Sapatilhas Pretas Urban', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 2, hasPattern: false, material: 'pele' },
+      { id: '11', name: 'Sapatos Clássicos Oxford', category: 'pes', fit: 'Normal', color1: 'Preto', color2: '', weather: 'Ameno', formality: 4, hasPattern: false, material: 'pele' }
     ];
     setCloset(samples);
   };
@@ -430,8 +491,9 @@ export default function App() {
   const ItemBox = ({ slotKey, item, placeholder }: { slotKey: string; item: any; placeholder: string }) => (
     <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-all ${item ? 'bg-zinc-900 border-sky-500/50' : 'bg-zinc-950/40 border-zinc-800/80 border-dashed'}`}>
       <div className="overflow-hidden pr-2 flex-1">
-        <div className="text-xs font-bold text-zinc-100 truncate">
+        <div className="text-xs font-bold text-zinc-100 truncate flex items-center gap-1.5">
           {item ? item.name : <span className="text-zinc-600 font-normal italic">{placeholder}</span>}
+          {item?.hasPattern && <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1 py-0.2 rounded">Estampado</span>}
         </div>
         {item && (
           <div className="text-[10px] text-zinc-300 mt-1 flex items-center gap-1.5 flex-wrap">
@@ -546,7 +608,7 @@ export default function App() {
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 font-bold text-black text-sm shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 hover:opacity-95"
             >
               <span>✨</span>
-              {isGenerating ? 'A aplicar regras de styling...' : 'Gerar Outfit Personalizado'}
+              {isGenerating ? 'A aplicar Matriz Definitiva de Styling...' : 'Gerar Outfit Personalizado'}
             </button>
 
             {generatedOutfit && (
@@ -934,6 +996,17 @@ export default function App() {
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-zinc-100 focus:outline-none focus:border-sky-500"
                   />
                 </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="hasPattern"
+                  checked={newItem.hasPattern}
+                  onChange={(e) => setNewItem((p: any) => ({ ...p, hasPattern: e.target.checked }))}
+                  className="rounded bg-zinc-950 border-zinc-800 text-sky-500 focus:ring-0"
+                />
+                <label htmlFor="hasPattern" className="text-zinc-300 font-medium">Esta peça tem estampado / grafismo</label>
               </div>
 
               <div>
